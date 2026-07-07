@@ -8,7 +8,7 @@
   - sales_amount  : 売上金額（= visitors × avg_spend, 従たる予測対象）
 
 説明変数（指定の4ソース + 追加提案データ）:
-  ① CPSS購買情報  : 会員来店数・新規/リピート比率・客単価・カテゴリ構成（集計値）
+  ① CSPM購買情報  : 会員来店数・新規/リピート比率・客単価・カテゴリ構成（集計値）
   ② 天候情報      : 最高/最低気温・降水量・天気区分（当日の予報値という想定）
   ③ 人流予測      : 店舗周辺の人出指数（潜在需要と相関する説明変数）
   ④ SNS情報       : 言及数・感情スコア（前日までの値が翌日来店の先行指標になる）
@@ -163,7 +163,7 @@ def generate_retail_data(
 
     sales_amount = (visitors * avg_spend).astype(int)
 
-    # ===== 会員（CPSS）集計値 =====
+    # ===== 会員（CSPM）集計値 =====
     member_ratio = np.clip(0.62 + 0.05 * (point_multiplier >= 5) + rng.normal(0, 0.03, days), 0.4, 0.9)
     member_visitors = (visitors * member_ratio).round().astype(int)
     new_member_ratio = np.clip(0.05 + 0.03 * is_sale + rng.normal(0, 0.01, days), 0.01, 0.2).round(3)
@@ -176,7 +176,7 @@ def generate_retail_data(
             "visitors": visitors,
             "sales_amount": sales_amount,
             "avg_spend": avg_spend,
-            # --- ① CPSS購買情報（会員集計）---
+            # --- ① CSPM購買情報（会員集計）---
             "member_visitors": member_visitors,
             "member_ratio": member_ratio.round(3),
             "new_member_ratio": new_member_ratio,

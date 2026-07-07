@@ -16,3 +16,7 @@ __pycache__/
 
 # Matplotlib cache
 /tmp/
+
+# 実データ
+test_data/
+data/*.csv
