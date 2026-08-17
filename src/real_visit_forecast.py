@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -95,11 +96,78 @@ ASOF_FEATURES = CALENDAR_FEATURES + [
     "n_prior_records",
 ]
 
+# カレンダーのみで客単価を予測する特徴量（ラグ不要なので任意の日付に使える）
+CALENDAR_SPEND_FEATURES = [
+    "shop_id_code",
+    "dow",
+    "month",
+    "is_weekend",
+    "is_holiday",
+]
+
+# 学習データに無い月を予測するとき用。month / weekofyear を外して外挿を避ける。
+# 木モデルは未学習の月を「学習済みの端の月」として扱うため、月を入れたまま
+# 学習期間外（例: 10〜12月しか無いデータで2月）を予測すると大きく下振れする。
+CALENDAR_DOW_FEATURES = [
+    "shop_id_code",
+    "dow",
+    "is_weekend",
+    "is_holiday",
+    "is_payday",
+    "is_month_start",
+    "is_month_end",
+]
+
+CALENDAR_DOW_SPEND_FEATURES = [
+    "shop_id_code",
+    "dow",
+    "is_weekend",
+    "is_holiday",
+]
+
+# ラグ系特徴量（学習済みパネルから引き当てる列）。実績が無い日は取得できない。
+LAG_FEATURE_COLUMNS = [
+    "receipts_lag1",
+    "receipts_lag7",
+    "receipts_ma7",
+    "receipts_ma30",
+    "net_sales_lag1",
+    "avg_spend_lag1",
+    "avg_spend_ma7",
+    "members_lag1",
+]
+
 
 def _is_holiday(d: pd.Timestamp) -> bool:
     if jpholiday is None:
         return False
     return bool(jpholiday.is_holiday(d.date()))
+
+
+def add_calendar_features(d: pd.DataFrame) -> pd.DataFrame:
+    """`date` 列だけからカレンダー特徴量を付与する（実績・ラグに依存しない）.
+
+    学習時と任意日付の予測時で同じ関数を通すことで、特徴量の定義ズレを防ぐ。
+    """
+    dt = d["date"].dt
+    d["dow"] = dt.dayofweek
+    d["month"] = dt.month
+    d["weekofyear"] = dt.isocalendar()["week"].to_numpy().astype(int)
+    d["is_weekend"] = (d["dow"] >= 5).astype(int)
+    d["is_holiday"] = d["date"].map(_is_holiday).astype(int)
+    d["is_payday"] = dt.day.between(24, 26).astype(int)
+    d["is_month_start"] = (dt.day <= 3).astype(int)
+    d["is_month_end"] = (dt.day >= 28).astype(int)
+    return d
+
+
+def build_shop_code_map(shop_ids: Iterable[str]) -> dict[str, int]:
+    """shop_id → shop_id_code の対応表を作る.
+
+    `astype("category").cat.codes` と同じ辞書順を明示的に再現する。任意日付の予測行を
+    後から組み立てるとき、学習時と同じコードを振るために必要。
+    """
+    return {s: i for i, s in enumerate(sorted({str(s) for s in shop_ids}))}
 
 
 def load_pooled_panel(
@@ -117,16 +185,7 @@ def load_pooled_panel(
 
 def build_features_pooled(df: pd.DataFrame) -> pd.DataFrame:
     """店舗ごとにラグを計算し、カレンダー特徴を付与する."""
-    d = df.copy()
-    dt = d["date"].dt
-    d["dow"] = dt.dayofweek
-    d["month"] = dt.month
-    d["weekofyear"] = dt.isocalendar().week.astype(int)
-    d["is_weekend"] = (d["dow"] >= 5).astype(int)
-    d["is_holiday"] = d["date"].map(_is_holiday).astype(int)
-    d["is_payday"] = d["date"].dt.day.between(24, 26).astype(int)
-    d["is_month_start"] = (d["date"].dt.day <= 3).astype(int)
-    d["is_month_end"] = (d["date"].dt.day >= 28).astype(int)
+    d = add_calendar_features(df.copy())
 
     g = d.groupby("shop_id", sort=False)
     d["receipts_lag1"] = g["receipts"].shift(1)
@@ -142,6 +201,135 @@ def build_features_pooled(df: pd.DataFrame) -> pd.DataFrame:
     return d
 
 
+def build_calendar_frame(
+    shop_ids: Sequence[str],
+    dates: Sequence[pd.Timestamp],
+    shop_code_map: Mapping[str, int],
+) -> pd.DataFrame:
+    """店舗×日付の全組み合わせに、カレンダー特徴量だけを付けた予測用の行列を作る.
+
+    実績もラグも参照しないため、パネルに存在しない将来日付の行も組み立てられる。
+    """
+    unknown = sorted({str(s) for s in shop_ids} - set(shop_code_map))
+    if unknown:
+        raise ValueError(f"学習済みモデルが知らない店舗IDです: {unknown[:5]}")
+
+    d = pd.DataFrame(
+        [
+            (str(shop_id), pd.Timestamp(date).normalize())
+            for shop_id in shop_ids
+            for date in dates
+        ],
+        columns=["shop_id", "date"],
+    )
+    d = add_calendar_features(d)
+    d["shop_id_code"] = d["shop_id"].map(shop_code_map).astype(int)
+    return d.sort_values(["shop_id", "date"]).reset_index(drop=True)
+
+
+@dataclass
+class CalendarModels:
+    """カレンダー特徴量のみで学習した来店・客単価モデル.
+
+    ラグを必要としないので、学習期間の外（将来日付）でも予測できる。
+    季節性を使う版と、月・週番号を外した曜日ベース版の2本を持ち、予測対象月が
+    学習データに含まれるかで使い分ける。
+    """
+
+    visit_model: HistGradientBoostingRegressor
+    spend_model: HistGradientBoostingRegressor
+    visit_model_dow: HistGradientBoostingRegressor
+    spend_model_dow: HistGradientBoostingRegressor
+    shop_code_map: dict[str, int]
+    trained_months: frozenset[int]
+    train_end: pd.Timestamp
+    n_train_rows: int
+
+    def predict_frame(
+        self, frame: pd.DataFrame
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """カレンダー特徴量だけの行列を予測し、(来店, 客単価, 使用モデル名) を返す.
+
+        学習データに無い月は季節性を使わないモデルに回す。
+        """
+        f = frame.reset_index(drop=True)
+        seasonal = f["month"].isin(self.trained_months).to_numpy()
+        receipts = np.empty(len(f), dtype=float)
+        spend = np.empty(len(f), dtype=float)
+        kind = np.where(seasonal, "calendar", "calendar_dow")
+
+        if seasonal.any():
+            sub = f.loc[seasonal]
+            receipts[seasonal] = self.visit_model.predict(sub[CALENDAR_FEATURES])
+            spend[seasonal] = self.spend_model.predict(sub[CALENDAR_SPEND_FEATURES])
+        if not seasonal.all():
+            rest = ~seasonal
+            sub = f.loc[rest]
+            receipts[rest] = self.visit_model_dow.predict(sub[CALENDAR_DOW_FEATURES])
+            spend[rest] = self.spend_model_dow.predict(sub[CALENDAR_DOW_SPEND_FEATURES])
+        return receipts, spend, kind
+
+
+def train_calendar_models(
+    df: pd.DataFrame,
+    train_end_exclusive: pd.Timestamp | str | None = None,
+    random_state: int = 42,
+) -> CalendarModels:
+    """ラグ無しで来店・客単価を学習する（任意日付の予測用）.
+
+    `train_end_exclusive` を渡すとその日より前の行だけで学習する。予測対象日以降の実績を
+    学習に混ぜない（リーク防止）ため、過去日を予測する場合は必ず指定する。
+    """
+    d = df.copy()
+    d["shop_id"] = d["shop_id"].astype(str)
+    # 対応表は絞り込み前の全店舗から作る（学習期間を変えてもコードが動かないようにする）
+    code_map = build_shop_code_map(d["shop_id"])
+    d = add_calendar_features(d)
+    d["shop_id_code"] = d["shop_id"].map(code_map).astype(int)
+
+    if train_end_exclusive is not None:
+        d = d[d["date"] < pd.Timestamp(train_end_exclusive).normalize()]
+    d = d.dropna(subset=["receipts", "avg_spend"])
+    if d.empty:
+        raise ValueError("カレンダーモデルの学習データが空です")
+
+    def _visit(features: list[str]) -> HistGradientBoostingRegressor:
+        m = HistGradientBoostingRegressor(
+            max_iter=500,
+            learning_rate=0.05,
+            max_depth=6,
+            l2_regularization=1.0,
+            early_stopping=True,
+            validation_fraction=0.15,
+            random_state=random_state,
+            categorical_features=[features.index("shop_id_code")],
+        )
+        m.fit(d[features], d["receipts"])
+        return m
+
+    def _spend(features: list[str]) -> HistGradientBoostingRegressor:
+        m = HistGradientBoostingRegressor(
+            max_iter=300,
+            learning_rate=0.05,
+            max_depth=4,
+            random_state=random_state,
+            categorical_features=[features.index("shop_id_code")],
+        )
+        m.fit(d[features], d["avg_spend"])
+        return m
+
+    return CalendarModels(
+        visit_model=_visit(CALENDAR_FEATURES),
+        spend_model=_spend(CALENDAR_SPEND_FEATURES),
+        visit_model_dow=_visit(CALENDAR_DOW_FEATURES),
+        spend_model_dow=_spend(CALENDAR_DOW_SPEND_FEATURES),
+        shop_code_map=code_map,
+        trained_months=frozenset(int(m) for m in d["date"].dt.month.unique()),
+        train_end=pd.Timestamp(d["date"].max()).normalize(),
+        n_train_rows=int(len(d)),
+    )
+
+
 def load_full_panel(path: Path | str = DEFAULT_PANEL) -> pd.DataFrame:
     """店舗×日パネルを、日次カバレッジで絞らず全店舗そのまま読み込む."""
     df = pd.read_csv(path, dtype={"shop_id": str}, parse_dates=["date"])
@@ -153,15 +341,7 @@ def build_features_full(df: pd.DataFrame) -> pd.DataFrame:
     前回レコードからの空白日数（gap_days）を明示的に特徴量化する。
     """
     d = df.copy().sort_values(["shop_id", "date"]).reset_index(drop=True)
-    dt = d["date"].dt
-    d["dow"] = dt.dayofweek
-    d["month"] = dt.month
-    d["weekofyear"] = dt.isocalendar().week.astype(int)
-    d["is_weekend"] = (d["dow"] >= 5).astype(int)
-    d["is_holiday"] = d["date"].map(_is_holiday).astype(int)
-    d["is_payday"] = d["date"].dt.day.between(24, 26).astype(int)
-    d["is_month_start"] = (d["date"].dt.day <= 3).astype(int)
-    d["is_month_end"] = (d["date"].dt.day >= 28).astype(int)
+    d = add_calendar_features(d)
 
     g = d.groupby("shop_id", sort=False)
     d["gap_days"] = g["date"].diff().dt.days

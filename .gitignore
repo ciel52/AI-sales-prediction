@@ -20,3 +20,14 @@ __pycache__/
 # 実データ
 test_data/
 data/*.csv
+
+# 秘密情報
+.env
+.env.*
+!.env.example
+
+# Next.js
+web/node_modules/
+web/.next/
+web/.env.local
+web/.env*.local

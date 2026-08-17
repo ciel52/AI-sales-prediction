@@ -1,0 +1,45 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Source+Sans+3:wght@400;500;600;700&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #172033;
+  --muted: #5c667a;
+  --accent: #0f766e;
+  --accent-soft: #ccfbf1;
+  --panel: rgba(255, 255, 255, 0.88);
+  --wash: #f1f5f4;
+  --line: #d7e0dc;
+  --danger: #b42318;
+  --bg0: #e8f0ec;
+  --bg1: #d9e8e2;
+  --bg2: #f7f4ef;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  color: var(--ink);
+  font-family: "Source Sans 3", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, var(--bg1), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #cfe7e1, transparent 50%),
+    linear-gradient(165deg, var(--bg0), var(--bg2) 55%, #eef2f0);
+  min-height: 100vh;
+}
+
+.font-display {
+  font-family: "Fraunces", "Hiragino Mincho ProN", serif;
+  font-optical-sizing: auto;
+}
+
+.m-plus-rounded-1c-regular {
+  font-family: "M PLUS Rounded 1c", sans-serif;
+  font-weight: 400;
+  font-style: normal;
+}

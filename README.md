@@ -50,44 +50,93 @@
 | 6. 実データ取込・EDA | 提供TSVの取込・クレンジング・日次パネル化・傾向確認 | **完了** |
 | 6.5 実データ予測（A：購買） | 店舗×日の購買客数・売上を予測 | **完了** |
 | 6.6 実データ予測（B：通行人） | 単店の日次入店数を予測（独立デモ） | 後続 |
-| 6.9 基盤連携 | DB連携・自動化・ダッシュボード | 後続 |
+| 6.9 Webアプリ（本番UI） | Next.js + FastAPI（予測UI＋施策チャット） | **最小UI完了** |
 | 7.（任意）継続学習・施策最適化 | 再学習/ドリフト検知＋強化学習/バンディット | 任意 |
 
 ## 構成
+
+社内で予測デスクを動かすのに必要なのは `api/` `web/` `src/` `data/` です。
+検証用ノートブックと擬似データは `archive/` にまとめています（詳細は [`archive/README.md`](./archive/README.md)）。
 
 ```
 .
 ├── 要件定義.md            # 要件定義書（本プロジェクトの仕様・論点）
 ├── README.md              # 本ファイル
+├── docs/
+│   └── 環境構築手順.md     # 社内PCでの起動手順
 ├── requirements.txt       # 依存パッケージ
-├── phase1_data.ipynb      # 【フェーズ1】擬似データ生成と傾向確認（来店予測用）
-├── phase2_visit_model.ipynb  # 【フェーズ2・3】来店予測モデル → 売上予測接続
-├── phase5_llm_advisor.ipynb  # 【フェーズ5】予測の解釈・施策提案（LLMプロンプト）
-├── phase6_real_eda.ipynb  # 【フェーズ6】実データ取込・EDA（購買A系統・通行人B系統）
-├── phase6_5_real_forecast.ipynb  # 【フェーズ6.5】実データ予測（A系統・86店プール）
-├── demo.ipynb             # 技術検証PoC（旧テーマ：イベント観光の翌日売上予測）
-├── test_data/             # 提供された実データ（TSV・大容量・gitignore対象）
+├── .env.example           # LLMキー等の雛形（コピーして .env にする）
+├── api/                   # FastAPI（/predict /chat /data）
+├── web/                   # Next.js 予測デスクUI
+├── src/
+│   ├── real_data_etl.py          # 生購買TSV → 店舗×日パネル
+│   ├── real_visit_forecast.py    # 実データの来店・売上予測
+│   └── llm_advisor.py            # 施策提案（LLM / ルールベース）
 ├── data/
-│   ├── retail_synthetic.csv    # 生成した擬似データ（1店舗・2年分・日次）
-│   ├── real_store_daily.csv    # 【実データ】購買 店舗×日 集計（A系統）
-│   └── real_flow_daily.csv     # 【実データ】通行人 端末×日 集計（B系統）
-└── src/
-    ├── retail_synthetic_data.py  # 【現行】小売ポイントシステム用 擬似データ生成
-    ├── real_data_etl.py          # 【実データ】TSV取込・店舗×日／端末×日への集計ETL
-    ├── real_visit_forecast.py    # 【実データ】プール方式の来店・売上予測パイプライン
-    ├── visit_forecast.py         # 来店予測パイプライン（擬似データ用）
-    ├── llm_advisor.py            # 施策提案プロンプト・文脈生成・LLM/ルールベース生成
-    └── synthetic_data.py         # PoC版 擬似データ生成（イベント観光）
+│   ├── real_store_daily.csv      # 購買 店舗×日 集計（学習入力・gitignore）
+│   └── real_flow_daily.csv       # 通行人 端末×日 集計（B系統）
+├── test_data/             # 提供された生データ（大容量・gitignore）
+└── archive/               # 社内構築には不要（検証履歴）
+    ├── phase*.ipynb / demo.ipynb
+    ├── visit_forecast.py / retail_synthetic_data.py / synthetic_data.py
+    └── retail_synthetic.csv
+```
+
+### フェーズ6.9 成果物（API + 最小UI）
+- `api/`：FastAPI。起動時に実データモデルを学習キャッシュし、Next.js から呼べる HTTP API を提供。
+- `web/`：Next.js 最小UI。店舗選択・日次/週次/月次ボタン・予測グラフ/表・施策提案チャット。
+- エンドポイント：
+  - `GET /health` … 稼働・モデル状態
+  - `GET /shops` … 予測対象店舗一覧
+  - `POST /predict` … 日次/週次/月次予測（`granularity`）。**学習期間外の任意日付も指定可**
+  - `POST /chat` … 施策提案AI（予測コンテキスト付き。`GEMINI_API_KEY` / `OPENAI_API_KEY` が無ければルールベース）
+
+#### 任意日付の予測（学習期間外への対応）
+
+実績データは 2024-10-01〜2024-12-30 だが、**それ以降の任意日付も予測できる**。
+`/predict` は日付ごとに使えるモデルを自動で選び、`daily[].model` で明示する。
+
+| `model` | 使う場面 | 特徴量 | 精度 |
+|---|---|---|---|
+| `lag` | 前日・前週の実績が揃う日 | カレンダー＋ラグ（`FEATURES`） | 来店MAPE 約8%（通常期） |
+| `calendar` | 実績が無いが、対象月が学習データに含まれる | カレンダーのみ（`CALENDAR_FEATURES`） | 来店MAPE 約9%（全187店・参考） |
+| `calendar_dow` | 対象月が学習データに無い（現データでは1〜9月） | 月・週番号を除く（`CALENDAR_DOW_FEATURES`） | 季節変動を反映しない参考値 |
+
+`calendar_dow` を分けているのは、木モデルが未学習の月を「学習済みの端の月」として扱い、
+**大きく下振れする**ため。10〜12月のみのデータで2月を予測すると、月を入れたままでは
+日曜の実績平均50に対し21（-57%）を返したが、月・週番号を外すと52になった。
+
+**同月日の過去実績（参考値）**
+
+予測対象日と同じ月日の実績を、前年 → 前々年 → 3年前の順に探して併記する
+（`daily[].ref_date` / `ref_receipts` / `ref_net_sales`）。例：2025-10-12 を予測すると
+2024-10-12 の実績を返す。曜日は一致しないため（この例では日曜 vs 土曜）、UI・LLM
+プロンプトの両方で参照日の曜日を明示している。過去実績が無ければ `null`。
+
+- 起動：
+
+```bash
+# 1) API（プロジェクトルート）
+pip install -r requirements.txt
+# `.env` に GEMINI_API_KEY=... または OPENAI_API_KEY=... を書く（任意）
+# LLM_PROVIDER=auto|gemini|openai
+uvicorn api.main:app --reload --port 8000
+
+# 2) Web UI
+cd web
+npm install
+npm run dev
+# http://127.0.0.1:3000
 ```
 
 ### フェーズ6 成果物（実データ）
 - `src/real_data_etl.py`：`test_data/` のTSVを読み込み、購買を **店舗×日**（購買客数・純売上・客単価・会員数・返品）、通行人を **端末×日**（入店数）に集計。実行は `python src/real_data_etl.py`。
-- `phase6_real_eda.ipynb`：カバレッジ確認・時系列・曜日/祝日効果・来店↔売上相関の可視化。
+- `archive/phase6_real_eda.ipynb`：カバレッジ確認・時系列・曜日/祝日効果・来店↔売上相関の可視化。
 - 主な確認結果：連続日次60日以上の店舗 **86/187**、来店(receipts)↔純売上の相関 **0.91**、会員数↔来店 **0.995**、曜日・祝日効果あり（祝日は平日比 約0.80）。返品(RETN)は購入額が負値のため純売上計算で調整済み。
 
 ### フェーズ6.5 成果物（実データ予測・プール方式）
 - `src/real_visit_forecast.py`：86店プール（2024Q4・91日）で購買来店数・純売上を予測。`test_end` で検証期間を指定可能。
-- `phase6_5_real_forecast.ipynb`：検証期間比較・学習・可視化・特徴量重要度。
+- `archive/phase6_5_real_forecast.ipynb`：検証期間比較・学習・可視化・特徴量重要度。
 
 **検証期間別の来店MAPE（14日間・参考値）**
 
@@ -113,16 +162,18 @@
 - 精度低下はごくわずかで、店舗網羅性を大きく広げられる。特徴量重要度は `shop_id_code`・`dow` が支配的で `gap_days` 自体の寄与は小さい（店舗×曜日の傾向で大半を説明できてしまうため）。
 - 精度重視なら**B案**、疎店舗のラグ情報も活かしたいなら**A案**が候補。関数：`train_calendar_only_model` / `train_asof_model` / `compare_coverage_strategies`。
 
-### フェーズ1 成果物
-- `src/retail_synthetic_data.py`：1店舗・2年分の日次データを生成。来店客数に
+### フェーズ1 成果物（検証履歴・`archive/`）
+- `archive/retail_synthetic_data.py`：1店舗・2年分の日次データを生成。来店客数に
   曜日・季節・祝日・給料日・天候・人流・SNS先行・販促（ポイント◯倍/特売/クーポン）の関係を埋め込み済み。
-- `phase1_data.ipynb`：生成データの可視化と、埋め込んだ傾向の定量確認。
-- `data/retail_synthetic.csv`：フェーズ2でそのまま読み込めるデータ。
+- `archive/phase1_data.ipynb`：生成データの可視化と、埋め込んだ傾向の定量確認。
+- `archive/retail_synthetic.csv`：フェーズ2でそのまま読み込めるデータ。
 
-> `demo.ipynb` / `src/synthetic_data.py` は、機械学習による予測の型が機能することを確認した
+> `archive/demo.ipynb` / `archive/synthetic_data.py` は、機械学習による予測の型が機能することを確認した
 > **技術検証用のPoC**（題材：イベント・観光の売上予測）です。
 
 ## セットアップ
+
+社内 PC で予測デスクを動かす手順は [`docs/環境構築手順.md`](./docs/環境構築手順.md) を参照してください。
 
 ```bash
 python3 -m venv .venv
@@ -134,7 +185,7 @@ pip install -r requirements.txt
 
 ```bash
 source .venv/bin/activate
-jupyter notebook demo.ipynb
+jupyter notebook archive/demo.ipynb
 ```
 
 PoC の検証結果（合成データ・seed=42、直近90日検証）：
@@ -151,22 +202,25 @@ PoC の検証結果（合成データ・seed=42、直近90日検証）：
 
 ```bash
 source .venv/bin/activate
-jupyter notebook phase1_data.ipynb        # フェーズ1：データ生成・確認
-jupyter notebook phase2_visit_model.ipynb # フェーズ2・3：来店予測 → 売上予測
-jupyter notebook phase5_llm_advisor.ipynb # フェーズ5：予測の解釈・施策提案
-jupyter notebook phase6_real_eda.ipynb    # フェーズ6：実データEDA
-jupyter notebook phase6_5_real_forecast.ipynb  # フェーズ6.5：実データ予測（A系統・プール）
-python src/real_data_etl.py               # 実データ集計（ETL）を再実行する場合
+jupyter notebook archive/phase1_data.ipynb        # フェーズ1：データ生成・確認
+jupyter notebook archive/phase2_visit_model.ipynb # フェーズ2・3：来店予測 → 売上予測
+jupyter notebook archive/phase5_llm_advisor.ipynb # フェーズ5：予測の解釈・施策提案
+jupyter notebook archive/phase6_real_eda.ipynb    # フェーズ6：実データEDA
+jupyter notebook archive/phase6_5_real_forecast.ipynb  # フェーズ6.5：実データ予測（A系統・プール）
+python src/real_data_etl.py                       # 実データ集計（ETL）を再実行する場合
 ```
 
 ### LLM施策提案について（フェーズ5）
 
-`phase5_llm_advisor.ipynb` は、予測結果を店長向けの具体的な施策提案に翻訳します。
+`archive/phase5_llm_advisor.ipynb` は、予測結果を店長向けの具体的な施策提案に翻訳します。
 APIキーがあれば実際のLLMが、無ければ同じ文脈からルールベースの下書きが提案を生成します。
 
 ```bash
-export OPENAI_API_KEY="sk-..."   # 設定するとLLMが提案を生成（任意）
-pip install openai               # 未インストールなら
+# プロジェクト直下の `.env` に書く（推奨）
+# LLM_PROVIDER=auto          # auto | gemini | openai
+# GEMINI_API_KEY=...         # Google AI Studio
+# OPENAI_API_KEY=sk-...      # OpenAI（任意）
+pip install openai google-genai   # requirements.txt にも含む
 ```
 
 ## フェーズ2・3の結果（参考値）
@@ -189,10 +243,29 @@ pip install openai               # 未インストールなら
 
 ## 次のステップ
 
+### 本番UIの基本仕様（決定済み）
+
+- **Webアプリ**で **日次 / 週次 / 月次** を選択して予測を実行できる
+- **施策提案AIとチャット形式**で会話できる
+- 詳細・推奨機能は [`要件定義.md`](./要件定義.md) の「12. 本番活用の基本仕様」を参照
+
+### 技術スタック（決定済み）
+
+| 層 | 採用 |
+|---|---|
+| API / 予測 | **FastAPI（Python）** — 既存ML・LLMをサービス化 |
+| UI | **Next.js（React + TypeScript）** — チャットUX・本番UI向け |
+| 予測エンジン | 既存 scikit-learn（変更なし） |
+| データ | 当面 Parquet/CSV → 本番化で PostgreSQL |
+| 配布 | Docker（API + Web） |
+
+詳細な選定理由は [`要件定義.md`](./要件定義.md) の「12.5 技術スタック」を参照。
+
+### フェーズ候補
+
+- **フェーズ6.9 Step3**：店舗複数選択・実績比較強化・異常アラート・認証
 - **フェーズ6.6**：B系統（通行人カウント単店）の日次入店数予測
-- **実データ版フェーズ5**：予測結果を `llm_advisor.py` で解釈・施策提案
 - **フェーズ4（任意）**：会員個人単位の来店・離反（churn）予測
-- **フェーズ6.9**：DB連携・定期実行
 - **フェーズ7（任意）**：継続学習と施策の自動改善（下記）
 
 > 端末→店舗マッピングが判明すれば、A系統（購買）とB系統（通行人）の接続が可能になる。
