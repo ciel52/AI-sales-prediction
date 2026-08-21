@@ -92,17 +92,17 @@ export function ChatPanel({
   }
 
   return (
-    <section className="flex h-full min-h-[420px] flex-col rounded-2xl border border-[var(--line)] bg-[var(--panel)]">
-      <header className="border-b border-[var(--line)] px-5 py-4">
-        <h2 className="font-display text-lg text-[var(--ink)]">施策提案AI</h2>
-        <p className="mt-1 text-xs text-[var(--muted)]">
+    <section className="flex h-full min-h-[280px] min-w-0 flex-col rounded-2xl border border-[var(--line)] bg-[var(--panel)] sm:min-h-[420px]">
+      <header className="border-b border-[var(--line)] px-4 py-3 sm:px-5 sm:py-4">
+        <h2 className="font-display text-base text-[var(--ink)] sm:text-lg">施策提案AI</h2>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--muted)]">
           {context
             ? `店舗 ${context.shop_id} / ${granularity} の予測を文脈として使用`
             : "先に予測を実行すると、結果を踏まえて助言します"}
         </p>
       </header>
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-5">
         {messages.length === 0 && (
           <div className="rounded-xl bg-[var(--wash)] px-4 py-3 text-sm text-[var(--muted)]">
             例:「この予測なら人員はどう配分すべき？」「売上を上げる打ち手は？」
@@ -113,8 +113,8 @@ export function ChatPanel({
             key={`${m.role}-${i}`}
             className={
               m.role === "user"
-                ? "ml-8 rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm text-white"
-                : "mr-4 whitespace-pre-wrap rounded-2xl bg-[var(--wash)] px-4 py-3 text-sm text-[var(--ink)]"
+                ? "ml-6 break-words rounded-2xl bg-[var(--accent)] px-3 py-2.5 text-sm text-white sm:ml-8 sm:px-4 sm:py-3"
+                : "mr-2 whitespace-pre-wrap break-words rounded-2xl bg-[var(--wash)] px-3 py-2.5 text-sm text-[var(--ink)] sm:mr-4 sm:px-4 sm:py-3"
             }
           >
             {m.content}
@@ -127,7 +127,7 @@ export function ChatPanel({
       </div>
 
       <form
-        className="border-t border-[var(--line)] p-4"
+        className="border-t border-[var(--line)] p-3 sm:p-4"
         onSubmit={(e) => {
           e.preventDefault();
           void send();
@@ -138,12 +138,12 @@ export function ChatPanel({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="施策について質問する"
-            className="min-w-0 flex-1 rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm outline-none ring-[var(--accent)] focus:ring-2"
+            className="min-w-0 flex-1 rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-base outline-none ring-[var(--accent)] focus:ring-2 sm:text-sm"
           />
           <button
             type="submit"
             disabled={loading || !input.trim()}
-            className="rounded-xl bg-[var(--ink)] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40"
+            className="shrink-0 rounded-xl bg-[var(--ink)] px-3 py-2.5 text-sm font-medium text-white disabled:opacity-40 sm:px-4"
           >
             送信
           </button>

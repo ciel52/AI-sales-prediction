@@ -20,6 +20,16 @@ export const MODEL_LABELS: Record<ModelKind, string> = {
   calendar_dow: "曜日ベース予測（学習外の時期）",
 };
 
+/** 検証時の来店MAPE（期間平均）を「当たる目安」にしたもの（100 − MAPE）。 */
+export const MODEL_ACCURACY: Record<
+  ModelKind,
+  { pct: number }
+> = {
+  lag: { pct: 92 },
+  calendar: { pct: 90 },
+  calendar_dow: { pct: 85 },
+};
+
 export type DailyPoint = {
   shop_id: string;
   date: string;
@@ -32,6 +42,10 @@ export type DailyPoint = {
   ref_date: string | null;
   ref_receipts: number | null;
   ref_net_sales: number | null;
+  /** 同曜日に揃えるためずらした過去実績の日付。無ければ null */
+  dow_ref_date: string | null;
+  dow_ref_receipts: number | null;
+  dow_ref_net_sales: number | null;
   model: ModelKind;
 };
 

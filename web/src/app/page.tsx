@@ -13,20 +13,26 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="mb-8">
-        <h1 className="m-plus-rounded-1c-regular text-3xl text-[var(--ink)] sm:text-4xl">
+    <main className="mx-auto min-h-screen max-w-7xl px-3 py-5 sm:px-6 sm:py-8 lg:px-8">
+      <header className="mb-5 sm:mb-8">
+        <h1 className="m-plus-rounded-1c-regular text-2xl text-[var(--ink)] sm:text-4xl">
           来店・売上予測デスク
         </h1>
-        <p className="m-plus-rounded-1c-regular mt-2 max-w-2xl text-sm text-[var(--muted)]">
+        <p className="m-plus-rounded-1c-regular mt-2 max-w-2xl text-xs leading-relaxed text-[var(--muted)] sm:text-sm">
           日次・週次・月次の予測を実行し、施策提案AIと対話しながら打ち手を検討します。
+          <br />
           数字の根拠は
           <Link href="/algorithm" className="mx-1 text-[var(--accent)] underline-offset-2 hover:underline">
             予測のしくみ
           </Link>
           を参照してください。
+          {/*
           <br />
-          API: <code className="m-plus-rounded-1c-regular text-[var(--ink)]">{API_BASE}</code>
+          API:{" "}
+          <code className="m-plus-rounded-1c-regular break-all text-[var(--ink)]">
+            {API_BASE}
+          </code>
+          */}
         </p>
       </header>
 
@@ -51,7 +57,7 @@ export default function HomePage() {
         </p>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+      <div className="grid min-w-0 gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <PredictPanel
           shops={shops}
           shopId={shopId}

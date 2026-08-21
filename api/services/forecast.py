@@ -214,6 +214,7 @@ class ForecastService:
         frame = self._attach_actuals(frame)
         frame = self._attach_lag_features(bundle, frame)
         frame = self._attach_reference_actuals(frame)
+        frame = self._attach_dow_reference_actuals(frame)
 
         use_lag = frame["has_lag"].to_numpy()
         pred_receipts = np.full(len(frame), np.nan)
@@ -261,6 +262,13 @@ class ForecastService:
                 ),
                 ref_receipts=_num(r.ref_receipts),
                 ref_net_sales=_num(r.ref_net_sales),
+                dow_ref_date=(
+                    pd.Timestamp(r.dow_ref_date).strftime("%Y-%m-%d")
+                    if pd.notna(r.dow_ref_date)
+                    else None
+                ),
+                dow_ref_receipts=_num(r.dow_ref_receipts),
+                dow_ref_net_sales=_num(r.dow_ref_net_sales),
                 model=str(r.model),
             )
             for r in frame.itertuples(index=False)
@@ -385,6 +393,79 @@ class ForecastService:
             out.loc[hit, ["ref_date", "ref_receipts", "ref_net_sales"]] = merged.loc[
                 hit, ["ref_date", "ref_receipts", "ref_net_sales"]
             ]
+        return out
+
+    @staticmethod
+    def _weekday_shift_days(target: pd.Timestamp, base: pd.Timestamp) -> int:
+        """base を何日ずらすと target と同じ曜日になるか（-3〜+3 の最短）。"""
+        delta = int(target.dayofweek - base.dayofweek) % 7
+        if delta > 3:
+            delta -= 7
+        return delta
+
+    def _attach_dow_reference_actuals(self, frame: pd.DataFrame) -> pd.DataFrame:
+        """過去の期間をまとめてずらし、曜日が重なるように過去実績を紐づける.
+
+        同月日のままでは曜日がズレるため、前年（→前々年）の同じ頃を
+        数日スライドして月曜同士・日曜同士が並ぶようにする。
+        過去年に実績が無いときは、1週以上前の同じ長さの期間で代用する。
+        """
+        assert self._raw is not None
+        actuals = (
+            self._raw[["shop_id", "date", "receipts", "net_sales"]]
+            .drop_duplicates(subset=["shop_id", "date"])
+            .rename(
+                columns={
+                    "date": "dow_ref_date",
+                    "receipts": "dow_ref_receipts",
+                    "net_sales": "dow_ref_net_sales",
+                }
+            )
+        )
+        actual_dates = set(pd.to_datetime(actuals["dow_ref_date"]))
+
+        out = frame.copy()
+        out["dow_ref_date"] = pd.Series(pd.NaT, index=out.index, dtype="datetime64[ns]")
+        out["dow_ref_receipts"] = np.nan
+        out["dow_ref_net_sales"] = np.nan
+        if out.empty:
+            return out
+
+        start = pd.Timestamp(out["date"].min()).normalize()
+        end = pd.Timestamp(out["date"].max()).normalize()
+        span = int((end - start).days)
+
+        candidates: list[tuple[int, int, pd.Timestamp]] = []
+        for years_back in range(1, REFERENCE_YEARS_BACK + 1):
+            base = (start - pd.DateOffset(years=years_back)).normalize()
+            delta = self._weekday_shift_days(start, base)
+            hist_start = (base + pd.Timedelta(days=delta)).normalize()
+            wanted = pd.date_range(hist_start, periods=span + 1, freq="D")
+            hits = int(sum(d in actual_dates for d in wanted))
+            hist_end = hist_start + pd.Timedelta(days=span)
+            # 過去年を優先（hist_end < start なら予測期間と重ならない）
+            rank = hits * 10 + (1 if hist_end < start else 0)
+            candidates.append((rank, hits, hist_start))
+        for weeks_back in (5, 4, 3, 2, 1):
+            hist_start = (start - pd.Timedelta(weeks=weeks_back)).normalize()
+            wanted = pd.date_range(hist_start, periods=span + 1, freq="D")
+            hits = int(sum(d in actual_dates for d in wanted))
+            hist_end = hist_start + pd.Timedelta(days=span)
+            rank = hits + (1 if hist_end < start else 0)
+            candidates.append((rank, hits, hist_start))
+
+        candidates.sort(key=lambda row: row[0], reverse=True)
+        if not candidates or candidates[0][1] <= 0:
+            return out
+
+        hist_start = candidates[0][2]
+        cand = out[["shop_id", "date"]].copy()
+        cand["dow_ref_date"] = hist_start + (cand["date"] - start)
+        merged = cand.merge(actuals, on=["shop_id", "dow_ref_date"], how="left")
+        merged.index = out.index
+        out[["dow_ref_date", "dow_ref_receipts", "dow_ref_net_sales"]] = merged[
+            ["dow_ref_date", "dow_ref_receipts", "dow_ref_net_sales"]
+        ]
         return out
 
     def _lag_models(self, bundle: ModelBundle, start: pd.Timestamp, end: pd.Timestamp):

@@ -41,6 +41,12 @@ class DailyPoint(BaseModel):
     ref_date: str | None = Field(None, description="参照した同月日の過去実績の日付")
     ref_receipts: float | None = None
     ref_net_sales: float | None = None
+    dow_ref_date: str | None = Field(
+        None,
+        description="曜日揃えで参照した過去実績の日付（同月日をずらした日付）",
+    )
+    dow_ref_receipts: float | None = None
+    dow_ref_net_sales: float | None = None
     model: ModelKind = "lag"
 
 

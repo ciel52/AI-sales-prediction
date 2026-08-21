@@ -1,5 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Source+Sans+3:wght@400;500;600;700&display=swap");
-@import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -10,6 +10,9 @@
   --muted: #5c667a;
   --accent: #0f766e;
   --accent-soft: #ccfbf1;
+  --pred: #0f766e;
+  --actual: #172033;
+  --ref: #9a5b12;
   --panel: rgba(255, 255, 255, 0.88);
   --wash: #f1f5f4;
   --line: #d7e0dc;
@@ -21,6 +24,8 @@
 
 html {
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -31,6 +36,8 @@ body {
     radial-gradient(900px 500px at 100% 0%, #cfe7e1, transparent 50%),
     linear-gradient(165deg, var(--bg0), var(--bg2) 55%, #eef2f0);
   min-height: 100vh;
+  overflow-x: hidden;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .font-display {
@@ -42,4 +49,46 @@ body {
   font-family: "M PLUS Rounded 1c", sans-serif;
   font-weight: 400;
   font-style: normal;
+}
+
+.tone-pred {
+  color: var(--pred);
+}
+
+.tone-actual {
+  color: var(--actual);
+}
+
+.tone-ref {
+  color: var(--ref);
+}
+
+/* 見やすい表示: 全部を大きくせず、色と字の太さで強弱をはっきりさせる */
+html.easy-read {
+  --ink: #101828;
+  --muted: #3d4a5c;
+  --accent: #08756c;
+  --pred: #08756c;
+  --actual: #101828;
+  --ref: #a14a00;
+}
+
+html.easy-read h1,
+html.easy-read h2 {
+  font-weight: 700;
+}
+
+html.easy-read .tone-pred,
+html.easy-read .tone-actual,
+html.easy-read .tone-ref {
+  font-weight: 700;
+}
+
+html.easy-read [class*="text-[9px]"],
+html.easy-read [class*="text-[10px]"] {
+  font-size: 12px !important;
+}
+
+html.easy-read [class*="text-[11px]"] {
+  font-size: 13px !important;
 }

@@ -31,12 +31,12 @@ const LAG_ROWS = [
 
 export default function AlgorithmPage() {
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-8 max-w-3xl">
+    <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8 lg:px-8">
+      <div className="mb-6 max-w-3xl sm:mb-8">
         <p className="text-xs font-semibold tracking-[0.18em] text-[var(--accent)]">
           HOW THE FORECAST WORKS
         </p>
-        <h1 className="m-plus-rounded-1c-regular mt-2 text-3xl text-[var(--ink)] sm:text-4xl">
+        <h1 className="m-plus-rounded-1c-regular mt-2 text-2xl text-[var(--ink)] sm:text-4xl">
           予測アルゴリズムの説明
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
@@ -46,7 +46,7 @@ export default function AlgorithmPage() {
         </p>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="grid min-w-0 gap-8 lg:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="lg:sticky lg:top-6 lg:self-start">
           <nav className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] px-4 py-3">
             <p className="text-[11px] font-medium text-[var(--muted)]">目次</p>
@@ -284,7 +284,7 @@ export default function AlgorithmPage() {
                     <td className="px-3 py-2">
                       学習に無い月（現状の1〜9月）
                     </td>
-                    <td className="px-3 py-2">季節変動を含まない参考値</td>
+                    <td className="px-3 py-2">来店MAPE 約15%（季節込みの期間平均）</td>
                   </tr>
                 </tbody>
               </table>
@@ -367,7 +367,7 @@ function Section({
   return (
     <section
       id={id}
-      className="scroll-mt-6 rounded-2xl border border-[var(--line)] bg-[var(--panel)] px-5 py-5 sm:px-6"
+      className="scroll-mt-6 rounded-2xl border border-[var(--line)] bg-[var(--panel)] px-4 py-4 sm:px-6 sm:py-5"
     >
       <h2 className="font-display text-xl text-[var(--ink)]">{title}</h2>
       <div className="mt-3 space-y-3 text-sm leading-relaxed text-[var(--ink)]">
